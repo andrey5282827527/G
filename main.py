@@ -1,6 +1,7 @@
 import os
 import random
 import asyncio
+import uvicorn
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
@@ -9,7 +10,7 @@ from datetime import datetime
 from email.message import EmailMessage
 import aiosmtplib
 
-# --- НАСТРОЙКИ ИЗ RAILWAY ---
+# --- НАСТРОЙКИ ---
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 
@@ -30,22 +31,24 @@ class Message(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 engine = create_engine("sqlite:///./messenger.db", connect_args={"check_same_thread": False})
-Base.metadata.create_all(bind=engine)
+Base.metadata.all_all = Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(bind=engine)
 
 app = FastAPI()
 temp_codes = {}
 
-# --- ИСПРАВЛЕННАЯ ОТПРАВКА ПОЧТЫ (ПОРТ 587) ---
+# --- ОТПРАВКА ПОЧТЫ С ЛОГИРОВАНИЕМ ---
 async def send_mail(target_email: str, code: str):
+    print(f"\n>>> ПОПЫТКА ОТПРАВКИ КОДА НА {target_email}...")
+    
     msg = EmailMessage()
-    msg.set_content(f"Твой код входа в Mini-Gram: {code}")
-    msg["Subject"] = "Код подтверждения"
+    msg.set_content(f"Твой код для входа: {code}")
+    msg["Subject"] = "Код подтверждения Mini-Gram"
     msg["From"] = SENDER_EMAIL
     msg["To"] = target_email
     
     try:
-        # Пытаемся пробиться через порт 587 (STARTTLS)
+        # Пробуем порт 587 (наиболее вероятный для Render)
         await aiosmtplib.send(
             msg, 
             hostname="smtp.mail.ru", 
@@ -56,18 +59,23 @@ async def send_mail(target_email: str, code: str):
             start_tls=True,
             timeout=10
         )
-        print(f"--- УСПЕХ: Письмо ушло на {target_email} ---")
+        print(f">>> [УСПЕХ] Код {code} удачно отправлен на почту {target_email}!")
     except Exception as e:
-        print(f"--- ОШИБКА ПОЧТЫ: {str(e)} ---")
+        print(f">>> [ОШИБКА] Код не ушел по почте. Причина: {e}")
+        print(f">>> [ИНФО] Используй код из этой консоли для входа: {code}")
 
 # --- API ---
 @app.post("/get_code")
 async def get_code(email: str, background_tasks: BackgroundTasks):
     code = str(random.randint(1000, 9999))
     temp_codes[email] = code
+    # Код в любом случае пишем в консоль для админа
+    print(f"\n--- ГЕНЕРАЦИЯ КОДА ---")
+    print(f"ПОЛЬЗОВАТЕЛЬ: {email}")
+    print(f"КОД: {code}")
+    print(f"----------------------\n")
+    
     background_tasks.add_task(send_mail, email, code)
-    # Код также дублируется в логи Railway для подстраховки
-    print(f"DEBUG: Код для {email} -> {code}")
     return {"status": "sent"}
 
 @app.post("/login")
@@ -79,7 +87,9 @@ async def login(email: str, code: str, username: str):
                 user = User(email=email, username=username)
                 db.add(user)
                 db.commit()
+        print(f">>> Юзер @{username} успешно вошел в систему.")
         return {"username": username}
+    print(f">>> Ошибка входа: неверный код для {email}")
     raise HTTPException(status_code=400, detail="Неверный код")
 
 @app.get("/messages")
@@ -103,6 +113,5 @@ async def index():
         return f.read()
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
