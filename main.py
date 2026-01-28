@@ -8,9 +8,9 @@ from datetime import datetime
 from email.message import EmailMessage
 import aiosmtplib
 
-# --- НАСТРОЙКИ (Railway возьмет их из переменных окружения) ---
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "tlpart_officall@mail.ru")
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "ZCBOZ444222111")
+# Теперь программа берет данные из настроек сервера, а не из текста
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 
 # --- БАЗА ДАННЫХ ---
 class Base(DeclarativeBase): pass
@@ -90,3 +90,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
