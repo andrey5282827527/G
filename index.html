@@ -1,80 +1,81 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mini-Gram Web</title>
+    <title>Mini-Gram TG Auth</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0e1621; color: white; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #auth, #chat { background: #17212b; padding: 20px; border-radius: 15px; width: 350px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        input { width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; background: #242f3d; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: #2b5278; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        #messages { height: 300px; overflow-y: auto; border-bottom: 1px solid #242f3d; margin-bottom: 10px; padding-right: 5px; display: flex; flex-direction: column-reverse; }
-        .msg { background: #2b5278; padding: 8px 12px; border-radius: 10px; margin: 5px 0; width: fit-content; max-width: 80%; }
-        .msg b { color: #82b1ff; font-size: 0.8em; display: block; }
+        body { font-family: sans-serif; background: #0e1621; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #17212b; padding: 30px; border-radius: 15px; width: 400px; text-align: center; }
+        input { width: 80%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; background: #242f3d; color: white; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; background: #2b5278; color: white; cursor: pointer; }
+        #chat-box { height: 300px; overflow-y: auto; text-align: left; background: #0e1621; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <div id="auth">
-        <h2 style="text-align:center">Mini-Gram</h2>
-        <div id="step1">
-            <input id="email" type="email" placeholder="Email на Mail.ru">
-            <button onclick="getCode()">Получить код</button>
-        </div>
-        <div id="step2" style="display:none">
-            <input id="code" type="text" placeholder="Код из письма">
-            <input id="username" type="text" placeholder="Ваш @username">
-            <button onclick="login()">Войти</button>
-        </div>
+<div id="auth-screen" class="card">
+    <h2>Вход через Telegram</h2>
+    <p>Нажми кнопку и отправь полученный код боту</p>
+    <button onclick="startAuth()">Получить код</button>
+    <h1 id="display-code" style="color: #5288c1;"></h1>
+    <p id="status"></p>
+</div>
+
+<div id="chat-screen" class="card" style="display:none; width: 500px;">
+    <h3 id="my-name"></h3>
+    <input id="search-user" placeholder="Кому пишем? (username без @)">
+    <button onclick="loadChat()">Найти/Открыть</button>
+    <hr>
+    <div id="chat-box"></div>
+    <div style="display:flex">
+        <input id="msg-input" placeholder="Сообщение...">
+        <button onclick="send()">></button>
     </div>
+</div>
 
-    <div id="chat" style="display:none; width: 400px;">
-        <h3 id="userTitle">Чат</h3>
-        <div id="messages"></div>
-        <input id="msgText" placeholder="Написать сообщение..." onkeypress="if(event.key==='Enter') send()">
-        <button onclick="send()">Отправить</button>
-    </div>
+<script>
+    let myUser = "";
+    let chatWith = "";
+    let authInterval;
 
-    <script>
-        let myUser = "";
-
-        async function getCode() {
-            const email = document.getElementById('email').value;
-            await fetch(`/get_code?email=${email}`, {method: 'POST'});
-            document.getElementById('step1').style.display = 'none';
-            document.getElementById('step2').style.display = 'block';
-        }
-
-        async function login() {
-            const email = document.getElementById('email').value;
-            const code = document.getElementById('code').value;
-            const username = document.getElementById('username').value;
-            const res = await fetch(`/login?email=${email}&code=${code}&username=${username}`, {method: 'POST'});
-            const data = await res.json();
-            if(data.username) {
-                myUser = data.username;
-                document.getElementById('auth').style.display = 'none';
-                document.getElementById('chat').style.display = 'block';
-                document.getElementById('userTitle').innerText = "@" + myUser;
-                setInterval(loadMessages, 2000); // Обновлять чат каждые 2 сек
+    async function startAuth() {
+        const res = await fetch('/request_code', {method:'POST'});
+        const data = await res.json();
+        document.getElementById('display-code').innerText = data.code;
+        document.getElementById('status').innerText = "Жду подтверждения в боте...";
+        
+        authInterval = setInterval(async () => {
+            const check = await fetch('/check_login/' + data.code);
+            const res = await check.json();
+            if(res.status === 'success') {
+                clearInterval(authInterval);
+                myUser = res.username;
+                showChat();
             }
-        }
+        }, 3000);
+    }
 
-        async function loadMessages() {
-            const res = await fetch('/messages');
-            const data = await res.json();
-            const box = document.getElementById('messages');
-            box.innerHTML = data.map(m => `<div class="msg"><b>${m.sender}</b>${m.text}</div>`).join('');
-        }
+    function showChat() {
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'block';
+        document.getElementById('my-name').innerText = "Ты: @" + myUser;
+    }
 
-        async function send() {
-            const text = document.getElementById('msgText').value;
-            if(!text) return;
-            await fetch(`/send?username=${myUser}&text=${text}`, {method: 'POST'});
-            document.getElementById('msgText').value = "";
-            loadMessages();
-        }
-    </script>
+    async function loadChat() {
+        chatWith = document.getElementById('search-user').value;
+        const res = await fetch(`/messages?me=${myUser}&with_user=${chatWith}`);
+        const msgs = await res.json();
+        const box = document.getElementById('chat-box');
+        box.innerHTML = msgs.map(m => `<div><b>${m.sender}:</b> ${m.text}</div>`).join('');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function send() {
+        const text = document.getElementById('msg-input').value;
+        await fetch(`/send?sender=${myUser}&receiver=${chatWith}&text=${text}`, {method:'POST'});
+        document.getElementById('msg-input').value = "";
+        loadChat();
+    }
+</script>
 </body>
 </html>
