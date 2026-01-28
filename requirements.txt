@@ -1,2 +1,5 @@
-aiogram
-huggingface_hub
+fastapi
+uvicorn
+sqlalchemy
+aiosmtplib
+python-multipart

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini-Gram Web</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0e1621; color: white; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #auth, #chat { background: #17212b; padding: 20px; border-radius: 15px; width: 350px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; background: #242f3d; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #2b5278; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        #messages { height: 300px; overflow-y: auto; border-bottom: 1px solid #242f3d; margin-bottom: 10px; padding-right: 5px; display: flex; flex-direction: column-reverse; }
+        .msg { background: #2b5278; padding: 8px 12px; border-radius: 10px; margin: 5px 0; width: fit-content; max-width: 80%; }
+        .msg b { color: #82b1ff; font-size: 0.8em; display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="auth">
+        <h2 style="text-align:center">Mini-Gram</h2>
+        <div id="step1">
+            <input id="email" type="email" placeholder="Email на Mail.ru">
+            <button onclick="getCode()">Получить код</button>
+        </div>
+        <div id="step2" style="display:none">
+            <input id="code" type="text" placeholder="Код из письма">
+            <input id="username" type="text" placeholder="Ваш @username">
+            <button onclick="login()">Войти</button>
+        </div>
+    </div>
+
+    <div id="chat" style="display:none; width: 400px;">
+        <h3 id="userTitle">Чат</h3>
+        <div id="messages"></div>
+        <input id="msgText" placeholder="Написать сообщение..." onkeypress="if(event.key==='Enter') send()">
+        <button onclick="send()">Отправить</button>
+    </div>
+
+    <script>
+        let myUser = "";
+
+        async function getCode() {
+            const email = document.getElementById('email').value;
+            await fetch(`/get_code?email=${email}`, {method: 'POST'});
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const code = document.getElementById('code').value;
+            const username = document.getElementById('username').value;
+            const res = await fetch(`/login?email=${email}&code=${code}&username=${username}`, {method: 'POST'});
+            const data = await res.json();
+            if(data.username) {
+                myUser = data.username;
+                document.getElementById('auth').style.display = 'none';
+                document.getElementById('chat').style.display = 'block';
+                document.getElementById('userTitle').innerText = "@" + myUser;
+                setInterval(loadMessages, 2000); // Обновлять чат каждые 2 сек
+            }
+        }
+
+        async function loadMessages() {
+            const res = await fetch('/messages');
+            const data = await res.json();
+            const box = document.getElementById('messages');
+            box.innerHTML = data.map(m => `<div class="msg"><b>${m.sender}</b>${m.text}</div>`).join('');
+        }
+
+        async function send() {
+            const text = document.getElementById('msgText').value;
+            if(!text) return;
+            await fetch(`/send?username=${myUser}&text=${text}`, {method: 'POST'});
+            document.getElementById('msgText').value = "";
+            loadMessages();
+        }
+    </script>
+</body>
+</html>
