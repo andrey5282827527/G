@@ -5,3 +5,4 @@ aiosmtplib
 
 python-multipart
 python-telegram-bot
+aiogram
