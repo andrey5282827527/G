@@ -1,34 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Mini-Gram TG Auth</title>
+    <title>Mini-Gram Messenger</title>
     <style>
-        body { font-family: sans-serif; background: #0e1621; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #17212b; padding: 30px; border-radius: 15px; width: 400px; text-align: center; }
-        input { width: 80%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; background: #242f3d; color: white; }
-        button { padding: 10px 20px; border: none; border-radius: 5px; background: #2b5278; color: white; cursor: pointer; }
-        #chat-box { height: 300px; overflow-y: auto; text-align: left; background: #0e1621; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0e1621; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #17212b; padding: 25px; border-radius: 15px; width: 400px; text-align: center; box-shadow: 0 5px 25px rgba(0,0,0,0.5); }
+        input { width: 90%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; background: #242f3d; color: white; outline: none; }
+        button { padding: 12px 25px; border: none; border-radius: 8px; background: #2b5278; color: white; cursor: pointer; font-weight: bold; }
+        #chat-screen { display: none; width: 500px; }
+        #chat-box { height: 350px; overflow-y: auto; background: #0e1621; padding: 15px; border-radius: 10px; margin: 15px 0; display: flex; flex-direction: column; }
+        .msg { margin: 5px 0; padding: 8px 12px; border-radius: 10px; max-width: 80%; }
+        .msg.me { background: #2b5278; align-self: flex-end; }
+        .msg.other { background: #242f3d; align-self: flex-start; }
     </style>
 </head>
 <body>
 
 <div id="auth-screen" class="card">
-    <h2>Вход через Telegram</h2>
-    <p>Нажми кнопку и отправь полученный код боту</p>
-    <button onclick="startAuth()">Получить код</button>
-    <h1 id="display-code" style="color: #5288c1;"></h1>
-    <p id="status"></p>
+    <h2>Mini-Gram</h2>
+    <p>Нажми кнопку и отправь код боту в Telegram</p>
+    <button onclick="startAuth()">Получить код для входа</button>
+    <h1 id="display-code" style="color: #5288c1; letter-spacing: 5px;"></h1>
+    <p id="status" style="color: #aaa;"></p>
 </div>
 
-<div id="chat-screen" class="card" style="display:none; width: 500px;">
-    <h3 id="my-name"></h3>
-    <input id="search-user" placeholder="Кому пишем? (username без @)">
-    <button onclick="loadChat()">Найти/Открыть</button>
-    <hr>
+<div id="chat-screen" class="card">
+    <div style="text-align: left; border-bottom: 1px solid #242f3d; padding-bottom: 10px;">
+        <span id="my-name" style="color: #5288c1; font-weight: bold;"></span>
+    </div>
+    
+    <div style="margin-top: 15px;">
+        <input id="search-user" placeholder="Кому пишем? (username без @)">
+        <button onclick="loadChat()">Открыть чат</button>
+    </div>
+
     <div id="chat-box"></div>
-    <div style="display:flex">
-        <input id="msg-input" placeholder="Сообщение...">
+
+    <div style="display:flex; gap: 10px;">
+        <input id="msg-input" placeholder="Напишите сообщение..." onkeypress="if(event.key==='Enter') send()">
         <button onclick="send()">></button>
     </div>
 </div>
@@ -36,42 +46,55 @@
 <script>
     let myUser = "";
     let chatWith = "";
-    let authInterval;
+    let pollInterval;
 
     async function startAuth() {
         const res = await fetch('/request_code', {method:'POST'});
         const data = await res.json();
         document.getElementById('display-code').innerText = data.code;
-        document.getElementById('status').innerText = "Жду подтверждения в боте...";
+        document.getElementById('status').innerText = "Ожидаю сообщения в Telegram...";
         
-        authInterval = setInterval(async () => {
+        // Каждые 3 секунды проверяем, ввел ли пользователь код в боте
+        const authCheck = setInterval(async () => {
             const check = await fetch('/check_login/' + data.code);
             const res = await check.json();
             if(res.status === 'success') {
-                clearInterval(authInterval);
+                clearInterval(authCheck);
                 myUser = res.username;
-                showChat();
+                enterApp();
             }
         }, 3000);
     }
 
-    function showChat() {
+    function enterApp() {
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('chat-screen').style.display = 'block';
-        document.getElementById('my-name').innerText = "Ты: @" + myUser;
+        document.getElementById('my-name').innerText = "@" + myUser;
+        // Запускаем авто-обновление чата раз в 3 секунды
+        setInterval(loadChat, 3000);
     }
 
     async function loadChat() {
-        chatWith = document.getElementById('search-user').value;
+        chatWith = document.getElementById('search-user').value.trim();
+        if(!chatWith) return;
+        
         const res = await fetch(`/messages?me=${myUser}&with_user=${chatWith}`);
         const msgs = await res.json();
         const box = document.getElementById('chat-box');
-        box.innerHTML = msgs.map(m => `<div><b>${m.sender}:</b> ${m.text}</div>`).join('');
+        
+        box.innerHTML = msgs.map(m => `
+            <div class="msg ${m.sender === myUser ? 'me' : 'other'}">
+                <small style="display:block; font-size: 0.7em; color: #82b1ff;">${m.sender}</small>
+                ${m.text}
+            </div>
+        `).join('');
         box.scrollTop = box.scrollHeight;
     }
 
     async function send() {
         const text = document.getElementById('msg-input').value;
+        if(!text || !chatWith) return;
+        
         await fetch(`/send?sender=${myUser}&receiver=${chatWith}&text=${text}`, {method:'POST'});
         document.getElementById('msg-input').value = "";
         loadChat();
