@@ -12,17 +12,23 @@ from aiogram.types import Update
 
 # --- НАСТРОЙКИ ---
 TOKEN = "8438399268:AAFfQ7ACMJFQ9PwRSv45SmSXWQQ6gF5CptE"
-# ОБЯЗАТЕЛЬНО: Впиши сюда свой URL из Render
 WEBHOOK_URL = "https://g-15es.onrender.com/webhook"
 
 # --- БАЗА ДАННЫХ ---
 class Base(DeclarativeBase): pass
+
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True); username = Column(String, unique=True)
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True)
+
 class Message(Base):
     __tablename__ = "messages"
-    id = Column(Integer, primary_key=True); sender = Column(String); receiver = Column(String); text = Column(Text); timestamp = Column(DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    sender = Column(String)
+    receiver = Column(String)
+    text = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
 
 engine = create_engine("sqlite:///./messenger.db", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
@@ -47,12 +53,13 @@ async def handle_message(message: types.Message):
                 db.commit()
         await message.answer(f"✅ Успех! Ты вошел как @{username}")
     else:
-        await message.answer("Введите 6-значный код с сайта.")
+        await message.answer("Введите код с сайта для входа.")
 
-# --- ЭНДПОИНТЫ ---
+# --- ЭНДПОИНТЫ API ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    update = Update.model_validate(await request.json(), context={"bot": bot})
+    data = await request.json()
+    update = Update.model_validate(data, context={"bot": bot})
     await dp.feed_update(bot, update)
     return {"ok": True}
 
@@ -71,21 +78,32 @@ async def check_login(code: str):
 @app.get("/messages")
 async def get_history(me: str, with_user: str):
     with SessionLocal() as db:
-        return db.query(Message).filter(((Message.sender==me)&(Message.receiver==with_user))|((Message.sender==with_user)&(Message.receiver==me))).all()
+        # Ищем сообщения и ПРЕОБРАЗУЕМ их в обычные словари (чтобы не было ошибки 500)
+        msgs = db.query(Message).filter(
+            ((Message.sender == me) & (Message.receiver == with_user)) |
+            ((Message.sender == with_user) & (Message.receiver == me))
+        ).order_by(Message.timestamp).all()
+        
+        return [{"sender": m.sender, "text": m.text} for m in msgs]
 
 @app.post("/send")
 async def send(sender: str, receiver: str, text: str):
+    if not text: return {"status": "error"}
     with SessionLocal() as db:
-        db.add(Message(sender=sender, receiver=receiver, text=text)); db.commit()
+        new_msg = Message(sender=sender, receiver=receiver, text=text)
+        db.add(new_msg)
+        db.commit()
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return open("index.html", encoding="utf-8").read()
+    try:
+        return open("index.html", encoding="utf-8").read()
+    except:
+        return "Файл index.html не найден!"
 
 @app.on_event("startup")
 async def on_startup():
-    # Устанавливаем вебхук. Это "выбивает" всех polling-ботов.
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
 
 if __name__ == "__main__":
