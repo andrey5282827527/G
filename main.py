@@ -9,11 +9,22 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Update
 
+# --- УДАЛЕНИЕ СТАРОЙ БАЗЫ (чтобы исправить ошибку с колонками) ---
+DB_PATH = "./messenger.db"
+if os.path.exists(DB_PATH):
+    # Если база данных старая (без колонки receiver), мы её удаляем
+    # Это разовое действие, чтобы исправить ошибку 500
+    try:
+        os.remove(DB_PATH)
+        print("Старая база данных удалена для обновления структуры.")
+    except Exception as e:
+        print(f"Не удалось удалить БД: {e}")
+
 # --- НАСТРОЙКИ ---
 TOKEN = "8438399268:AAFfQ7ACMJFQ9PwRSv45SmSXWQQ6gF5CptE"
 WEBHOOK_URL = "https://g-15es.onrender.com/webhook"
 
-# --- БАЗА ДАННЫХ (УПРОЩЕННАЯ) ---
+# --- БАЗА ДАННЫХ ---
 class Base(DeclarativeBase): pass
 
 class Message(Base):
@@ -24,8 +35,7 @@ class Message(Base):
     text = Column(Text)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-# Создаем базу данных прямо сейчас
-engine = create_engine("sqlite:///./messenger.db", connect_args={"check_same_thread": False})
+engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -73,17 +83,11 @@ def check_login(code: str):
 def get_history(me: str, with_user: str):
     db = SessionLocal()
     try:
-        # Прямой запрос к базе
         msgs = db.query(Message).filter(
             ((Message.sender == me) & (Message.receiver == with_user)) |
             ((Message.sender == with_user) & (Message.receiver == me))
         ).order_by(Message.timestamp).all()
-        
-        # Форматируем в простой список словарей
-        result = []
-        for m in msgs:
-            result.append({"sender": str(m.sender), "text": str(m.text)})
-        return result
+        return [{"sender": str(m.sender), "text": str(m.text)} for m in msgs]
     except Exception as e:
         print(f"DATABASE ERROR (GET): {e}")
         return []
@@ -108,8 +112,11 @@ def send_msg(sender: str, receiver: str, text: str):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    with open("index.html", "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except:
+        return "Файл index.html не найден!"
 
 @app.on_event("startup")
 async def on_startup():
