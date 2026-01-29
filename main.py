@@ -1,12 +1,11 @@
 import os
 import random
-import asyncio
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from datetime import datetime
-import uvicorn
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Update
 
@@ -14,13 +13,8 @@ from aiogram.types import Update
 TOKEN = "8438399268:AAFfQ7ACMJFQ9PwRSv45SmSXWQQ6gF5CptE"
 WEBHOOK_URL = "https://g-15es.onrender.com/webhook"
 
-# --- БАЗА ДАННЫХ ---
+# --- БАЗА ДАННЫХ (УПРОЩЕННАЯ) ---
 class Base(DeclarativeBase): pass
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True)
 
 class Message(Base):
     __tablename__ = "messages"
@@ -30,9 +24,10 @@ class Message(Base):
     text = Column(Text)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+# Создаем базу данных прямо сейчас
 engine = create_engine("sqlite:///./messenger.db", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
-SessionLocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 # --- ИНИЦИАЛИЗАЦИЯ ---
 app = FastAPI()
@@ -43,64 +38,78 @@ pending_auths = {}
 # --- ОБРАБОТКА ТЕЛЕГРАМ ---
 @dp.message()
 async def handle_message(message: types.Message):
-    text = message.text.strip()
-    if text in pending_auths:
+    code = message.text.strip()
+    if code in pending_auths:
         username = message.from_user.username or f"id{message.from_user.id}"
-        pending_auths[text] = {"username": username}
-        with SessionLocal() as db:
-            if not db.query(User).filter(User.username == username).first():
-                db.add(User(username=username))
-                db.commit()
-        await message.answer(f"✅ Успех! Ты вошел как @{username}")
+        pending_auths[code] = {"username": username}
+        await message.answer(f"✅ Вход выполнен: @{username}")
     else:
-        await message.answer("Введите код с сайта для входа.")
+        await message.answer("Введите код с сайта.")
 
 # --- ЭНДПОИНТЫ API ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.model_validate(data, context={"bot": bot})
-    await dp.feed_update(bot, update)
+    try:
+        data = await request.json()
+        update = Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print(f"WEBHOOK ERROR: {e}")
     return {"ok": True}
 
 @app.post("/request_code")
-async def request_code():
+def request_code():
     code = str(random.randint(100000, 999999))
     pending_auths[code] = None
     return {"code": code}
 
 @app.get("/check_login/{code}")
-async def check_login(code: str):
+def check_login(code: str):
     if code in pending_auths and pending_auths[code]:
         return {"status": "success", "username": pending_auths[code]["username"]}
     return {"status": "waiting"}
 
 @app.get("/messages")
-async def get_history(me: str, with_user: str):
-    with SessionLocal() as db:
-        # Ищем сообщения и ПРЕОБРАЗУЕМ их в обычные словари (чтобы не было ошибки 500)
+def get_history(me: str, with_user: str):
+    db = SessionLocal()
+    try:
+        # Прямой запрос к базе
         msgs = db.query(Message).filter(
             ((Message.sender == me) & (Message.receiver == with_user)) |
             ((Message.sender == with_user) & (Message.receiver == me))
         ).order_by(Message.timestamp).all()
         
-        return [{"sender": m.sender, "text": m.text} for m in msgs]
+        # Форматируем в простой список словарей
+        result = []
+        for m in msgs:
+            result.append({"sender": str(m.sender), "text": str(m.text)})
+        return result
+    except Exception as e:
+        print(f"DATABASE ERROR (GET): {e}")
+        return []
+    finally:
+        db.close()
 
 @app.post("/send")
-async def send(sender: str, receiver: str, text: str):
+def send_msg(sender: str, receiver: str, text: str):
     if not text: return {"status": "error"}
-    with SessionLocal() as db:
+    db = SessionLocal()
+    try:
         new_msg = Message(sender=sender, receiver=receiver, text=text)
         db.add(new_msg)
         db.commit()
-    return {"status": "ok"}
+        return {"status": "ok"}
+    except Exception as e:
+        db.rollback()
+        print(f"DATABASE ERROR (SEND): {e}")
+        return {"status": "error"}
+    finally:
+        db.close()
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    try:
-        return open("index.html", encoding="utf-8").read()
-    except:
-        return "Файл index.html не найден!"
+def index():
+    with open("index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 @app.on_event("startup")
 async def on_startup():
