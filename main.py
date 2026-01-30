@@ -70,7 +70,6 @@ def check_login(code: str):
 def get_my_chats(me: str):
     with SessionLocal() as db:
         rooms = [{"name": r.name, "type": "group"} for r in db.query(Room).all()]
-        # Находим всех, с кем есть сообщения
         sent = db.query(Message.receiver).filter(Message.sender == me).distinct().all()
         recd = db.query(Message.sender).filter(Message.receiver == me).distinct().all()
         u_names = list(set([r[0] for r in sent] + [r[0] for r in recd]))
@@ -81,13 +80,11 @@ def get_my_chats(me: str):
 @app.get("/messages")
 def get_msgs(me: str, target: str):
     with SessionLocal() as db:
-        # Чистка ГС (5 мин)
         limit = datetime.utcnow() - timedelta(minutes=5)
         old = db.query(Message).filter(Message.msg_type == "voice", Message.timestamp < limit).all()
         for v in old:
             if os.path.exists(v.text): os.remove(v.text); db.delete(v)
         db.commit()
-        
         is_room = db.query(Room).filter(Room.name == target).first()
         if is_room:
             msgs = db.query(Message).filter(Message.receiver == target).all()
@@ -118,7 +115,7 @@ async def create_sticker(pack: str, owner: str, file: UploadFile = File(...)):
         if not p_owner: db.add(StickerOwner(pack_name=pack, username=owner))
         path = f"stickers/{pack}_{random.randint(100,999)}.png"
         with open(path, "wb") as f: f.write(await file.read())
-        db.add(Message(sender=owner, receiver=pack, text=path, msg_type="sticker_def")) # просто храним путь
+        db.add(Message(sender=owner, receiver=pack, text=path, msg_type="sticker_def"))
         db.commit()
     return {"ok": True}
 
