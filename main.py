@@ -1,4 +1,4 @@
-import os, random, uvicorn, time
+import os, random, uvicorn, shutil
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, or_
@@ -10,16 +10,27 @@ from aiogram.types import Update
 # --- НАСТРОЙКИ ---
 TOKEN = "8438399268:AAFfQ7ACMJFQ9PwRSv45SmSXWQQ6gF5CptE"
 WEBHOOK_URL = "https://g-15es.onrender.com/webhook"
-UPLOAD_DIR = "./voice"
-if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
+VOICE_DIR = "voice_files"
+if not os.path.exists(VOICE_DIR): os.makedirs(VOICE_DIR)
 
+# --- БД ---
 class Base(DeclarativeBase): pass
+
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True)
-    sender = Column(String); receiver = Column(String)
-    text = Column(Text); msg_type = Column(String, default="text") # text или voice
+    sender = Column(String)
+    receiver = Column(String) # Ник юзера или ID группы/канала
+    text = Column(Text)
+    msg_type = Column(String, default="text") # text, voice
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class Room(Base):
+    __tablename__ = "rooms"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True)
+    owner = Column(String)
+    room_type = Column(String) # group, channel
 
 engine = create_engine("sqlite:///./messenger.db", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
@@ -28,53 +39,57 @@ SessionLocal = sessionmaker(bind=engine)
 app = FastAPI()
 bot = Bot(token=TOKEN); dp = Dispatcher(); pending_auths = {}
 
-# --- ЛОГИКА ОЧИСТКИ ---
-def clean_old_voices():
-    db = SessionLocal()
-    # Удаляем записи старше 5 минут, если это voice
-    limit = datetime.utcnow() - timedelta(minutes=5)
-    old_voices = db.query(Message).filter(Message.msg_type == "voice", Message.timestamp < limit).all()
-    for v in old_voices:
-        if os.path.exists(v.text): os.remove(v.text)
-        db.delete(v)
-    db.commit(); db.close()
-
+# --- API ---
 @app.get("/messages")
-def get_history(me: str, with_user: str):
-    clean_old_voices() # Чистим при каждом запросе
+def get_msgs(me: str, target: str):
     db = SessionLocal()
-    msgs = db.query(Message).filter(
-        or_((Message.sender==me) & (Message.receiver==with_user),
-            (Message.sender==with_user) & (Message.receiver==me))
-    ).order_by(Message.timestamp).all()
+    # Чистка старых ГС (удаляем файлы старше 5 мин)
+    old = db.query(Message).filter(Message.msg_type=="voice", Message.timestamp < datetime.utcnow()-timedelta(minutes=5)).all()
+    for o in old:
+        if os.path.exists(o.text): os.remove(o.text)
+        db.delete(o)
+    db.commit()
+
+    # Запрос истории (личка или группа)
+    is_room = db.query(Room).filter(Room.name == target).first()
+    if is_room:
+        msgs = db.query(Message).filter(Message.receiver == target).order_by(Message.timestamp).all()
+    else:
+        msgs = db.query(Message).filter(or_(
+            (Message.sender==me) & (Message.receiver==target),
+            (Message.sender==target) & (Message.receiver==me)
+        )).order_by(Message.timestamp).all()
     return [{"sender": m.sender, "text": m.text, "type": m.msg_type} for m in msgs]
 
-@app.get("/my_chats")
-def get_my_chats(me: str):
+@app.post("/create_room")
+def create_room(name: str, owner: str, rtype: str):
     db = SessionLocal()
-    # Находим всех уникальных собеседников
-    sent = db.query(Message.receiver).filter(Message.sender == me).distinct()
-    received = db.query(Message.sender).filter(Message.receiver == me).distinct()
-    chats = list(set([r[0] for r in sent] + [r[0] for r in received]))
-    return chats
+    if db.query(Room).filter(Room.name == name).first(): return {"status":"exists"}
+    db.add(Room(name=name, owner=owner, room_type=rtype))
+    db.commit()
+    return {"status":"ok"}
+
+@app.get("/list_rooms")
+def list_rooms():
+    db = SessionLocal()
+    return [{"name": r.name, "type": r.room_type} for r in db.query(Room).all()]
 
 @app.post("/send_voice")
-async def send_voice(sender: str, receiver: str, file: UploadFile = File(...)):
-    fname = f"{UPLOAD_DIR}/{random.randint(1000,9999)}_{file.filename}"
-    with open(fname, "wb") as f: f.write(await file.read())
+async def save_voice(sender: str, receiver: str, file: UploadFile = File(...)):
+    path = f"{VOICE_DIR}/{random.randint(100,999)}_{file.filename}.ogg"
+    with open(path, "wb") as f: f.write(await file.read())
     db = SessionLocal()
-    db.add(Message(sender=sender, receiver=receiver, text=fname, msg_type="voice"))
-    db.commit(); return {"ok": True}
+    db.add(Message(sender=sender, receiver=receiver, text=path, msg_type="voice"))
+    db.commit()
+    return {"ok": True}
 
 @app.get("/get_voice")
-def get_voice(path: str):
-    return FileResponse(path)
+def get_v(path: str): return FileResponse(path)
 
-# ... (остальные эндпоинты: /webhook, /request_code, /check_login как раньше) ...
-
+# (Остальные стандартные функции /webhook, /request_code сохраняются из прошлого кода)
 @app.post("/send")
 def send_msg(sender: str, receiver: str, text: str):
-    db = SessionLocal(); db.add(Message(sender=sender, receiver=receiver, text=text)); db.commit(); return {"ok": True}
+    db = SessionLocal(); db.add(Message(sender=sender, receiver=receiver, text=text)); db.commit(); return {"ok":True}
 
 @app.get("/", response_class=HTMLResponse)
 def index(): return open("index.html", encoding="utf-8").read()
