@@ -1,130 +1,81 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Mini-Gram Messenger</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0e1621; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #17212b; padding: 25px; border-radius: 15px; width: 450px; text-align: center; box-shadow: 0 5px 25px rgba(0,0,0,0.5); }
-        input { width: 80%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; background: #242f3d; color: white; outline: none; }
-        button { padding: 12px 20px; border: none; border-radius: 8px; background: #2b5278; color: white; cursor: pointer; font-weight: bold; margin-left: 5px; }
-        button:hover { background: #36618e; }
-        #chat-screen { display: none; }
-        #chat-box { height: 350px; overflow-y: auto; background: #0e1621; padding: 15px; border-radius: 10px; margin: 15px 0; display: flex; flex-direction: column; border: 1px solid #242f3d; }
-        .msg { margin: 5px 0; padding: 8px 12px; border-radius: 10px; max-width: 85%; word-wrap: break-word; text-align: left; position: relative; }
-        .msg.me { background: #2b5278; align-self: flex-end; color: #fff; }
-        .msg.other { background: #242f3d; align-self: flex-start; color: #fff; }
-        .msg small { display: block; font-size: 0.7em; color: #82b1ff; margin-bottom: 4px; }
-        .status-bar { font-size: 0.8em; color: #5288c1; margin-bottom: 10px; text-align: left; }
-    </style>
-</head>
-<body>
+<style>
+    #app-container { display: flex; height: 90vh; width: 900px; background: #17212b; border-radius: 15px; overflow: hidden; }
+    #sidebar { width: 250px; border-right: 1px solid #0e1621; padding: 10px; overflow-y: auto; }
+    #chat-main { flex-grow: 1; display: flex; flex-direction: column; padding: 15px; }
+    .chat-item { padding: 10px; cursor: pointer; border-radius: 5px; margin-bottom: 5px; background: #242f3d; }
+    .chat-item:hover { background: #2b5278; }
+    .voice-btn { background: #cf3333; } /* Красная кнопка для записи */
+</style>
 
-<div id="auth-screen" class="card">
-    <h2>Mini-Gram</h2>
-    <p>Нажми кнопку и отправь код боту</p>
-    <button onclick="startAuth()">Получить код</button>
-    <h1 id="display-code" style="color: #5288c1; letter-spacing: 5px; font-size: 40px;"></h1>
-    <p id="status" style="color: #aaa;"></p>
-</div>
+<div id="auth-screen"> ... </div>
 
-<div id="chat-screen" class="card">
-    <div class="status-bar">
-        Вы вошли как: <b id="my-name"></b>
-    </div>
-    
-    <div style="display:flex; margin-bottom: 10px;">
-        <input id="search-user" placeholder="Ник собеседника (без @)">
-        <button onclick="loadChat()">Чат</button>
-    </div>
-
-    <div id="chat-box">
-        <p style="color: #555; margin-top: 150px;">Введите ник и нажмите "Чат", чтобы начать</p>
-    </div>
-
-    <div style="display:flex; gap: 5px;">
-        <input id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') send()">
-        <button onclick="send()" style="background: #5288c1;">Отправить</button>
+<div id="chat-screen" style="display:none;">
+    <div id="app-container">
+        <div id="sidebar">
+            <h4 style="margin:0 0 10px 0;">Мои чаты</h4>
+            <div id="chats-list"></div>
+        </div>
+        <div id="chat-main">
+            <div id="my-name" style="font-weight:bold; color:#5288c1; margin-bottom:10px;"></div>
+            <input id="search-user" placeholder="Найти ник..." onkeypress="if(event.key==='Enter') loadChat()">
+            <div id="chat-box" style="flex-grow:1; overflow-y:auto; background:#0e1621; margin:10px 0; border-radius:10px; padding:10px;"></div>
+            <div style="display:flex; gap:5px;">
+                <input id="msg-input" placeholder="Сообщение...">
+                <button onclick="send()">></button>
+                <button id="voice-btn" class="voice-btn" onmousedown="startVoice()" onmouseup="stopVoice()">🎤</button>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
-    let myUser = "";
+    let myUser = localStorage.getItem('myUser');
     let chatWith = "";
+    let mediaRecorder;
+    let audioChunks = [];
 
-    async function startAuth() {
-        const res = await fetch('/request_code', {method:'POST'});
-        const data = await res.json();
-        document.getElementById('display-code').innerText = data.code;
-        
-        const authCheck = setInterval(async () => {
-            const check = await fetch('/check_login/' + data.code);
-            const res = await check.json();
-            if(res.status === 'success') {
-                clearInterval(authCheck);
-                myUser = res.username;
-                enterApp();
-            }
-        }, 2000);
-    }
+    // Если ник уже есть в памяти, сразу заходим
+    if(myUser) { enterApp(); }
 
     function enterApp() {
+        localStorage.setItem('myUser', myUser);
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('chat-screen').style.display = 'block';
         document.getElementById('my-name').innerText = "@" + myUser;
-        // Запускаем цикл обновления чата
+        setInterval(updateSidebar, 3000);
         setInterval(loadChat, 3000);
     }
 
-    async function loadChat() {
-        chatWith = document.getElementById('search-user').value.trim();
-        if(!chatWith) return;
-        
-        try {
-            const res = await fetch(`/messages?me=${myUser}&with_user=${chatWith}`);
-            const msgs = await res.json();
-            const box = document.getElementById('chat-box');
-            
-            if (msgs.length === 0) {
-                box.innerHTML = `<p style="color: #555; margin-top: 150px;">История сообщений с @${chatWith} пуста</p>`;
-                return;
-            }
-
-            box.innerHTML = msgs.map(m => `
-                <div class="msg ${m.sender === myUser ? 'me' : 'other'}">
-                    <small>${m.sender}</small>
-                    ${m.text}
-                </div>
-            `).join('');
-            
-            // Скролл вниз только если мы не листаем историю вверх
-            box.scrollTop = box.scrollHeight;
-        } catch (e) {
-            console.error("Ошибка загрузки сообщений:", e);
-        }
+    async function updateSidebar() {
+        const res = await fetch('/my_chats?me=' + myUser);
+        const chats = await res.json();
+        document.getElementById('chats-list').innerHTML = chats.map(c => `
+            <div class="chat-item" onclick="selectChat('${c}')">@${c}</div>
+        `).join('');
     }
 
-    async function send() {
-        const input = document.getElementById('msg-input');
-        const text = input.value.trim();
-        chatWith = document.getElementById('search-user').value.trim();
-
-        if(!text) return;
-        if(!chatWith) {
-            alert("Сначала введите ник собеседника!");
-            return;
-        }
-        
-        try {
-            const response = await fetch(`/send?sender=${myUser}&receiver=${chatWith}&text=${encodeURIComponent(text)}`, {method:'POST'});
-            if (response.ok) {
-                input.value = "";
-                await loadChat(); // Сразу обновляем чат после отправки
-            }
-        } catch (e) {
-            console.error("Ошибка отправки:", e);
-        }
+    function selectChat(user) {
+        document.getElementById('search-user').value = user;
+        loadChat();
     }
+
+    // ЛОГИКА ГОЛОСОВЫХ
+    async function startVoice() {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/ogg' });
+            const formData = new FormData();
+            formData.append('file', blob, 'voice.ogg');
+            await fetch(`/send_voice?sender=${myUser}&receiver=${chatWith}`, { method: 'POST', body: formData });
+            audioChunks = [];
+            loadChat();
+        };
+        mediaRecorder.start();
+    }
+    function stopVoice() { mediaRecorder.stop(); }
+
+    // В loadChat добавим отображение аудио
+    // if(m.type === 'voice') return `<audio controls src="/get_voice?path=${m.text}"></audio>`;
 </script>
-</body>
-</html>
