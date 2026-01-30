@@ -1,42 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-Messenger</title>
+    <style>
+        :root { --bg: #0e1621; --sidebar-bg: #17212b; --active: #2b5278; --text: #ffffff; --msg-me: #2b5278; --msg-other: #182533; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto; background: var(--bg); color: var(--text); height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        /* Экран входа */
+        #auth-screen { text-align: center; background: var(--sidebar-bg); padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .btn { background: #5288c1; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        .btn:hover { background: #6399d2; }
+        
+        /* Основной интерфейс */
+        #chat-screen { display: none; width: 100vw; height: 100vh; max-width: 1200px; max-height: 800px; background: var(--sidebar-bg); border-radius: 10px; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        
+        /* Боковая панель */
+        .sidebar { width: 300px; border-right: 1px solid #000; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 15px; background: var(--sidebar-bg); border-bottom: 1px solid #0e1621; }
+        .chat-list { flex-grow: 1; overflow-y: auto; }
+        .chat-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #0e1621; transition: 0.2s; }
+        .chat-item:hover { background: var(--bg); }
+        .chat-item.active { background: var(--active); }
+
+        /* Окно чата */
+        .main-chat { flex-grow: 1; display: flex; flex-direction: column; background: var(--bg); }
+        .chat-header { padding: 15px; background: var(--sidebar-bg); font-weight: bold; }
+        .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 70%; padding: 10px 15px; border-radius: 12px; word-wrap: break-word; }
+        .message.me { align-self: flex-end; background: var(--msg-me); }
+        .message.other { align-self: flex-start; background: var(--msg-other); }
+        
+        /* Ввод сообщения */
+        .input-area { padding: 15px; background: var(--sidebar-bg); display: flex; gap: 10px; align-items: center; }
+        input { flex-grow: 1; background: var(--bg); border: none; color: white; padding: 12px; border-radius: 8px; outline: none; }
+        .voice-btn { background: #cf3333; width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+<div id="auth-screen">
+    <h2>Добро пожаловать в G</h2>
+    <p>Нажмите кнопку и отправьте код боту в Telegram</p>
+    <button class="btn" onclick="startAuth()">Получить код</button>
+    <h1 id="display-code" style="color: #5288c1; letter-spacing: 5px;"></h1>
+    <p id="auth-status"></p>
+</div>
+
+<div id="chat-screen">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div id="user-info">@Загрузка...</div>
+            <button class="btn" style="padding: 5px 10px; margin-top: 10px; font-size: 12px;" onclick="createRoom()">+ Группа</button>
+        </div>
+        <div id="chat-list" class="chat-list">
+            </div>
+    </div>
+    <div class="main-chat">
+        <div class="chat-header" id="current-target">Выберите чат</div>
+        <div id="messages" class="messages"></div>
+        <div class="input-area">
+            <input type="text" id="msg-input" placeholder="Напишите сообщение..." onkeypress="if(event.key==='Enter') send()">
+            <button class="btn" onclick="send()">></button>
+            <button id="voice-btn" class="voice-btn" onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">🎤</button>
+        </div>
+    </div>
+</div>
+
 <script>
-    let myUser = localStorage.getItem('chat_user'); // Проверяем память
+    let myUser = localStorage.getItem('g_user');
     let currentChat = "";
     let mediaRecorder;
     let chunks = [];
 
-    window.onload = () => {
-        if(myUser) enterApp(); // Если залогинен, сразу в чат
-    };
+    if (myUser) enterApp();
 
-    function enterApp() {
-        localStorage.setItem('chat_user', myUser);
-        document.getElementById('auth-screen').style.display = 'none';
-        document.getElementById('chat-screen').style.display = 'flex';
-        document.title = "Чат: " + myUser;
-        setInterval(loadMessages, 2000);
-        loadRooms();
+    async function startAuth() {
+        const res = await fetch('/request_code', {method:'POST'});
+        const data = await res.json();
+        document.getElementById('display-code').innerText = data.code;
+        
+        const check = setInterval(async () => {
+            const r = await fetch('/check_login/' + data.code);
+            const d = await r.json();
+            if (d.status === 'success') {
+                clearInterval(check);
+                myUser = d.username;
+                enterApp();
+            }
+        }, 2000);
     }
 
-    // ГОЛОСОВЫЕ (Зажать кнопку)
-    async function startRecord() {
+    function enterApp() {
+        localStorage.setItem('g_user', myUser);
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+        document.getElementById('user-info').innerText = "Вы: @" + myUser;
+        
+        updateSidebar();
+        setInterval(loadMessages, 3000);
+        setInterval(updateSidebar, 5000);
+    }
+
+    async function updateSidebar() {
+        const res = await fetch('/list_rooms');
+        const rooms = await res.json();
+        const list = document.getElementById('chat-list');
+        list.innerHTML = rooms.map(r => `
+            <div class="chat-item ${currentChat === r.name ? 'active' : ''}" onclick="selectChat('${r.name}')">
+                <b># ${r.name}</b> <br> <small>${r.type}</small>
+            </div>
+        `).join('');
+    }
+
+    function selectChat(name) {
+        currentChat = name;
+        document.getElementById('current-target').innerText = "# " + name;
+        loadMessages();
+    }
+
+    async function loadMessages() {
+        if (!currentChat) return;
+        const res = await fetch(`/messages?me=${myUser}&target=${currentChat}`);
+        const msgs = await res.json();
+        const box = document.getElementById('messages');
+        box.innerHTML = msgs.map(m => `
+            <div class="message ${m.sender === myUser ? 'me' : 'other'}">
+                <div style="font-size: 10px; opacity: 0.6;">${m.sender}</div>
+                ${m.type === 'voice' ? `<audio controls src="/get_voice?path=${m.text}"></audio>` : m.text}
+            </div>
+        `).join('');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function send() {
+        const inp = document.getElementById('msg-input');
+        if (!inp.value || !currentChat) return;
+        await fetch(`/send?sender=${myUser}&receiver=${currentChat}&text=${encodeURIComponent(inp.value)}`, {method:'POST'});
+        inp.value = "";
+        loadMessages();
+    }
+
+    async function createRoom() {
+        const name = prompt("Название группы:");
+        if (name) await fetch(`/create_room?name=${name}&owner=${myUser}&rtype=group`, {method:'POST'});
+        updateSidebar();
+    }
+
+    // Голосовые сообщения
+    async function startVoice() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.ondataavailable = e => chunks.push(e.data);
         mediaRecorder.onstop = async () => {
             const blob = new Blob(chunks, { type: 'audio/ogg' });
             const fd = new FormData();
-            fd.append('file', blob, 'voice');
+            fd.append('file', blob, 'v.ogg');
             await fetch(`/send_voice?sender=${myUser}&receiver=${currentChat}`, {method:'POST', body:fd});
             chunks = [];
+            loadMessages();
         };
         mediaRecorder.start();
+        document.getElementById('voice-btn').style.transform = "scale(1.2)";
     }
 
-    function stopRecord() { mediaRecorder.stop(); }
-
-    // ГРУППЫ
-    async function createRoom(type) {
-        const name = prompt("Название:");
-        if(name) await fetch(`/create_room?name=${name}&owner=${myUser}&rtype=${type}`, {method:'POST'});
+    function stopVoice() {
+        if (mediaRecorder) mediaRecorder.stop();
+        document.getElementById('voice-btn').style.transform = "scale(1)";
     }
 </script>
+</body>
+</html>
