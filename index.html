@@ -2,195 +2,151 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>G-Messenger Premium</title>
+    <title>G-Messenger</title>
     <style>
-        :root { --bg: #0e1621; --sidebar-bg: #17212b; --active: #2b5278; --text: #ffffff; --msg-me: #2b5278; --msg-other: #182533; }
-        body { margin: 0; font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
-        
-        /* Sidebar */
-        .sidebar { width: 320px; background: var(--sidebar-bg); border-right: 1px solid #000; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 15px; border-bottom: 1px solid #0e1621; }
+        :root { --bg: #0e1621; --sidebar: #17212b; --active: #2b5278; --text: #fff; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        .sidebar { width: 300px; background: var(--sidebar); display: flex; flex-direction: column; border-right: 1px solid #000; }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #0e1621; }
         .chat-list { flex-grow: 1; overflow-y: auto; }
-        .chat-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #0e1621; }
+        .chat-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #0e1621; transition: 0.2s; }
         .chat-item:hover { background: #242f3d; }
         .chat-item.active { background: var(--active); }
-
-        /* Main Chat */
-        .main-chat { flex-grow: 1; display: flex; flex-direction: column; }
-        .chat-header { padding: 15px; background: var(--sidebar-bg); display: flex; justify-content: space-between; align-items: center; }
-        .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
-        .message { max-width: 75%; padding: 8px 15px; border-radius: 12px; position: relative; }
-        .message.me { align-self: flex-end; background: var(--msg-me); }
-        .message.other { align-self: flex-start; background: var(--msg-other); }
-        
-        /* Controls */
-        .input-area { padding: 15px; background: var(--sidebar-bg); display: flex; gap: 10px; align-items: center; }
-        input { flex-grow: 1; background: var(--bg); border: none; color: white; padding: 12px; border-radius: 8px; outline: none; }
-        .btn { background: #5288c1; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-        .voice-btn { background: #cf3333; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; color: white; }
-        
-        /* Auth */
-        #auth-screen { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
-        
-        .sticker-img { width: 120px; height: 120px; display: block; }
+        .main { flex-grow: 1; display: flex; flex-direction: column; }
+        .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #0e1621; }
+        .msg { max-width: 70%; padding: 10px; border-radius: 10px; }
+        .msg.me { align-self: flex-end; background: var(--active); }
+        .msg.other { align-self: flex-start; background: #182533; }
+        .input-box { padding: 20px; background: var(--sidebar); display: flex; gap: 10px; }
+        input { flex-grow: 1; background: var(--bg); border: none; color: #fff; padding: 10px; border-radius: 5px; }
+        button { background: #5288c1; color: #fff; border: none; padding: 10px; border-radius: 5px; cursor: pointer; }
+        #auth { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
     </style>
 </head>
 <body>
 
-<div id="auth-screen">
+<div id="auth">
     <h1>G-Messenger</h1>
-    <button class="btn" onclick="startAuth()">Получить код для входа</button>
-    <h2 id="display-code" style="letter-spacing: 5px; color: #5288c1;"></h2>
-    <p id="status">Зайдите в бота и отправьте ему код</p>
+    <button onclick="startAuth()">Войти через Telegram</button>
+    <h2 id="code-display" style="color: #5288c1; letter-spacing: 5px;"></h2>
 </div>
 
 <div class="sidebar">
     <div class="sidebar-header">
-        <div id="my-nick">@loading...</div>
-        <div style="margin-top:10px; display: flex; gap: 5px;">
-            <button class="btn" onclick="newPrivateChat()">🔍 ЛС</button>
-            <button class="btn" onclick="createNewGroup()">👥 Группа</button>
+        <div id="user-display">@loading...</div>
+        <div style="margin-top:10px; display:flex; gap:5px;">
+            <button onclick="searchUser()">🔍 Найти юзера</button>
+            <button onclick="createGrp()">👥 Группа</button>
         </div>
     </div>
     <div id="chat-list" class="chat-list"></div>
-    <div style="padding: 10px;">
-        <button class="btn" style="width: 100%; background: #4a4a4a;" onclick="manageStickers()">🖼 Мои стикеры</button>
-    </div>
 </div>
 
-<div class="main-chat">
-    <div class="chat-header">
-        <span id="chat-title">Выберите чат</span>
-        <button id="admin-add-btn" class="btn" style="display:none;" onclick="addUserToGroup()">+ Добавить участника</button>
-    </div>
-    <div id="messages" class="messages"></div>
-    <div class="input-area">
-        <button class="btn" onclick="showStickerPanel()">😊</button>
-        <input type="text" id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendText()">
-        <button id="voice-btn" class="voice-btn" onmousedown="startVoice()" onmouseup="stopVoice()">🎤</button>
-        <button class="btn" onclick="sendText()">></button>
+<div class="main">
+    <div style="padding:15px; background: var(--sidebar)" id="chat-title">Выберите чат</div>
+    <div id="msgs" class="messages"></div>
+    <div class="input-box">
+        <input type="text" id="m-inp" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') send()">
+        <button onmousedown="startVoice()" onmouseup="stopVoice()">🎤</button>
+        <button onclick="send()">></button>
     </div>
 </div>
 
 <script>
     let myUser = localStorage.getItem('g_user');
     let currentChat = "";
-    let mediaRecorder;
-    let chunks = [];
+    let mediaRecorder; let chunks = [];
 
-    if (myUser) loginSuccess(myUser);
+    if(myUser) loginOk(myUser);
 
     async function startAuth() {
         const res = await fetch('/request_code', {method:'POST'});
         const data = await res.json();
-        document.getElementById('display-code').innerText = data.code;
-        const check = setInterval(async () => {
+        document.getElementById('code-display').innerText = data.code;
+        const timer = setInterval(async () => {
             const r = await fetch('/check_login/' + data.code);
             const d = await r.json();
-            if (d.status === 'success') { clearInterval(check); loginSuccess(d.username); }
+            if(d.status === 'success') { clearInterval(timer); loginOk(d.username); }
         }, 2000);
     }
 
-    function loginSuccess(user) {
-        myUser = user;
-        localStorage.setItem('g_user', user);
-        document.getElementById('auth-screen').style.display = 'none';
-        document.getElementById('my-nick').innerText = "@" + myUser;
+    function loginOk(u) {
+        myUser = u; localStorage.setItem('g_user', u);
+        document.getElementById('auth').style.display = 'none';
+        document.getElementById('user-display').innerText = "@" + u;
         updateSidebar();
-        setInterval(loadMessages, 2500);
+        setInterval(updateSidebar, 5000);
+        setInterval(loadMsgs, 2000);
     }
 
     async function updateSidebar() {
-        const res = await fetch('/list_rooms');
-        const rooms = await res.json();
-        const list = document.getElementById('chat-list');
-        list.innerHTML = rooms.map(r => `
-            <div class="chat-item ${currentChat === r.name ? 'active' : ''}" onclick="selectChat('${r.name}', true)">
-                <b># ${r.name}</b><br><small>группа</small>
+        const res = await fetch('/get_my_chats?me=' + myUser);
+        const chats = await res.json();
+        document.getElementById('chat-list').innerHTML = chats.map(c => `
+            <div class="chat-item ${currentChat === c.name ? 'active' : ''}" onclick="selectChat('${c.name}')">
+                <b>${c.type === 'group' ? '👥' : '👤'} ${c.name}</b>
             </div>
         `).join('');
     }
 
-    function newPrivateChat() {
-        const who = prompt("Ник пользователя:");
-        if (who) selectChat(who, false);
-    }
-
-    function selectChat(name, isGroup) {
+    function selectChat(name) {
         currentChat = name;
-        document.getElementById('chat-title').innerText = (isGroup ? "Группа: " : "Чат с: ") + name;
-        document.getElementById('admin-add-btn').style.display = isGroup ? 'block' : 'none';
-        loadMessages();
+        document.getElementById('chat-title').innerText = "Чат с: " + name;
+        loadMsgs();
     }
 
-    async function loadMessages() {
-        if (!currentChat) return;
+    async function searchUser() {
+        const who = prompt("Ник пользователя:");
+        if(who && who !== myUser) {
+            // Чтобы чат появился, отправляем системное сообщение
+            await fetch(`/send?sender=${myUser}&receiver=${who}&text=Начало переписки`, {method:'POST'});
+            selectChat(who);
+            updateSidebar();
+        }
+    }
+
+    async function loadMsgs() {
+        if(!currentChat) return;
         const res = await fetch(`/messages?me=${myUser}&target=${currentChat}`);
-        const msgs = await res.json();
-        const box = document.getElementById('messages');
-        box.innerHTML = msgs.map(m => `
-            <div class="message ${m.sender === myUser ? 'me' : 'other'}">
-                <div style="font-size: 10px; opacity: 0.5;">${m.sender}</div>
-                ${renderMessageContent(m)}
+        const data = await res.json();
+        const box = document.getElementById('msgs');
+        box.innerHTML = data.map(m => `
+            <div class="msg ${m.sender === myUser ? 'me' : 'other'}">
+                <small style="opacity:0.5">${m.sender}</small><br>
+                ${m.type === 'voice' ? `<audio controls src="/get_voice?path=${m.text}"></audio>` : m.text}
             </div>
         `).join('');
         box.scrollTop = box.scrollHeight;
     }
 
-    function renderMessageContent(m) {
-        if (m.type === 'voice') return `<audio controls src="/get_voice?path=${m.text}"></audio>`;
-        if (m.type === 'sticker') return `<img class="sticker-img" src="/get_voice?path=${m.text}">`;
-        return m.text;
+    async function send() {
+        const i = document.getElementById('m-inp');
+        if(!i.value || !currentChat) return;
+        await fetch(`/send?sender=${myUser}&receiver=${currentChat}&text=${encodeURIComponent(i.value)}`, {method:'POST'});
+        i.value = ""; loadMsgs();
     }
 
-    async function sendText() {
-        const inp = document.getElementById('msg-input');
-        if (!inp.value || !currentChat) return;
-        await fetch(`/send?sender=${myUser}&receiver=${currentChat}&text=${encodeURIComponent(inp.value)}`, {method:'POST'});
-        inp.value = "";
-        loadMessages();
-    }
-
-    // СТИКЕРЫ С ПРОВЕРКОЙ ДОСТУПА
-    async function manageStickers() {
-        const pack = prompt("Введите номер стикерпака (например, 656):");
-        if (!pack) return;
-        
-        // ВАЖНО: Мы передаем myUser, чтобы сервер проверил, твой ли это пак
-        const action = confirm("Хотите добавить новый стикер в этот пак?");
-        if (action) {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.onchange = async () => {
-                const fd = new FormData();
-                fd.append('file', input.files[0]);
-                // Сервер должен проверять owner в create_sticker
-                const res = await fetch(`/create_sticker?pack=${pack}&owner=${myUser}`, {method:'POST', body:fd});
-                const data = await res.json();
-                if(data.error) alert("Доступ запрещен! Этот пак редактирует только владелец.");
-                else alert("Стикер добавлен!");
-            };
-            input.click();
+    async function createGrp() {
+        const n = prompt("Название группы:");
+        if(n) {
+            await fetch(`/create_room?name=${n}&owner=${myUser}`, {method:'POST'});
+            updateSidebar();
         }
     }
 
-    // ГОЛОСОВЫЕ
     async function startVoice() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+            const s = await navigator.mediaDevices.getUserMedia({audio:true});
+            mediaRecorder = new MediaRecorder(s);
             mediaRecorder.ondataavailable = e => chunks.push(e.data);
             mediaRecorder.onstop = async () => {
-                const blob = new Blob(chunks, { type: 'audio/ogg' });
-                const fd = new FormData();
-                fd.append('file', blob, 'v.ogg');
+                const b = new Blob(chunks, {type:'audio/ogg'});
+                const fd = new FormData(); fd.append('file', b, 'v.ogg');
                 await fetch(`/send_voice?sender=${myUser}&receiver=${currentChat}`, {method:'POST', body:fd});
-                chunks = [];
-                loadMessages();
+                chunks = []; loadMsgs();
             };
             mediaRecorder.start();
-        } catch(e) { alert("Включите HTTPS или разрешите микрофон в браузере!"); }
+        } catch(e) { alert("Микрофон недоступен!"); }
     }
     function stopVoice() { if(mediaRecorder) mediaRecorder.stop(); }
 </script>
