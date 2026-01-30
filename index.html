@@ -2,24 +2,55 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>G-Messenger</title>
     <style>
         :root { --bg: #0e1621; --sidebar: #17212b; --active: #2b5278; --text: #fff; }
-        body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 300px; background: var(--sidebar); display: flex; flex-direction: column; border-right: 1px solid #000; }
-        .sidebar-header { padding: 20px; border-bottom: 1px solid #0e1621; }
+        
+        body { 
+            margin: 0; font-family: sans-serif; background: #070b10; 
+            color: var(--text); display: flex; justify-content: center; align-items: center; 
+            height: 100vh; overflow: hidden; 
+        }
+
+        /* Обертка приложения */
+        #app-container {
+            display: flex; width: 100%; height: 100%;
+            background: var(--bg); overflow: hidden;
+        }
+
+        /* Адаптивность для ПК */
+        @media (min-width: 900px) {
+            #app-container { width: 950px; height: 85vh; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.8); }
+        }
+
+        /* Боковая панель */
+        .sidebar { width: 280px; background: var(--sidebar); display: flex; flex-direction: column; border-right: 1px solid #000; }
+        
+        @media (max-width: 600px) {
+            .sidebar { width: 70px; }
+            .sidebar b, .sidebar span { display: none; } /* Скрываем текст на мобилках */
+        }
+
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #0e1621; }
         .chat-list { flex-grow: 1; overflow-y: auto; }
-        .chat-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #0e1621; transition: 0.2s; }
+        .chat-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #0e1621; display: flex; align-items: center; gap: 10px; }
         .chat-item:hover { background: #242f3d; }
         .chat-item.active { background: var(--active); }
+
+        /* Основной чат */
         .main { flex-grow: 1; display: flex; flex-direction: column; }
-        .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #0e1621; }
-        .msg { max-width: 70%; padding: 10px; border-radius: 10px; }
+        .messages { flex-grow: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+        .msg { max-width: 80%; padding: 10px; border-radius: 10px; font-size: 15px; line-height: 1.4; }
         .msg.me { align-self: flex-end; background: var(--active); }
         .msg.other { align-self: flex-start; background: #182533; }
-        .input-box { padding: 20px; background: var(--sidebar); display: flex; gap: 10px; }
-        input { flex-grow: 1; background: var(--bg); border: none; color: #fff; padding: 10px; border-radius: 5px; }
-        button { background: #5288c1; color: #fff; border: none; padding: 10px; border-radius: 5px; cursor: pointer; }
+
+        /* Поле ввода */
+        .input-box { padding: 15px; background: var(--sidebar); display: flex; gap: 10px; }
+        input { flex-grow: 1; background: var(--bg); border: none; color: #fff; padding: 12px; border-radius: 8px; outline: none; }
+        button { background: #5288c1; color: #fff; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+        
+        /* Авторизация */
         #auth { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
     </style>
 </head>
@@ -27,28 +58,30 @@
 
 <div id="auth">
     <h1>G-Messenger</h1>
-    <button onclick="startAuth()">Войти через Telegram</button>
-    <h2 id="code-display" style="color: #5288c1; letter-spacing: 5px;"></h2>
+    <button onclick="startAuth()" style="font-size: 18px; padding: 15px 30px;">Войти через Telegram</button>
+    <h2 id="code-display" style="color: #5288c1; letter-spacing: 8px; margin-top: 20px;"></h2>
 </div>
 
-<div class="sidebar">
-    <div class="sidebar-header">
-        <div id="user-display">@loading...</div>
-        <div style="margin-top:10px; display:flex; gap:5px;">
-            <button onclick="searchUser()">🔍 Найти юзера</button>
-            <button onclick="createGrp()">👥 Группа</button>
+<div id="app-container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div id="user-display" style="font-weight: bold; margin-bottom: 10px;">@loading...</div>
+            <div style="display:flex; gap:5px; flex-wrap: wrap;">
+                <button onclick="searchUser()">🔍 <span>Поиск</span></button>
+                <button onclick="createGrp()">👥 <span>Группа</span></button>
+            </div>
         </div>
+        <div id="chat-list" class="chat-list"></div>
     </div>
-    <div id="chat-list" class="chat-list"></div>
-</div>
 
-<div class="main">
-    <div style="padding:15px; background: var(--sidebar)" id="chat-title">Выберите чат</div>
-    <div id="msgs" class="messages"></div>
-    <div class="input-box">
-        <input type="text" id="m-inp" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') send()">
-        <button onmousedown="startVoice()" onmouseup="stopVoice()">🎤</button>
-        <button onclick="send()">></button>
+    <div class="main">
+        <div style="padding:15px; background: var(--sidebar); font-weight: bold;" id="chat-title">Выберите чат</div>
+        <div id="msgs" class="messages"></div>
+        <div class="input-box">
+            <input type="text" id="m-inp" placeholder="Напишите что-нибудь..." onkeypress="if(event.key==='Enter') send()">
+            <button onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">🎤</button>
+            <button onclick="send()" style="font-weight: bold;">></button>
+        </div>
     </div>
 </div>
 
@@ -84,22 +117,21 @@
         const chats = await res.json();
         document.getElementById('chat-list').innerHTML = chats.map(c => `
             <div class="chat-item ${currentChat === c.name ? 'active' : ''}" onclick="selectChat('${c.name}')">
-                <b>${c.type === 'group' ? '👥' : '👤'} ${c.name}</b>
+                <span>${c.type === 'group' ? '👥' : '👤'}</span> <b>${c.name}</b>
             </div>
         `).join('');
     }
 
     function selectChat(name) {
         currentChat = name;
-        document.getElementById('chat-title').innerText = "Чат с: " + name;
+        document.getElementById('chat-title').innerText = name;
         loadMsgs();
     }
 
     async function searchUser() {
-        const who = prompt("Ник пользователя:");
+        const who = prompt("Ник пользователя (без @):");
         if(who && who !== myUser) {
-            // Чтобы чат появился, отправляем системное сообщение
-            await fetch(`/send?sender=${myUser}&receiver=${who}&text=Начало переписки`, {method:'POST'});
+            await fetch(`/send?sender=${myUser}&receiver=${who}&text=Запрос на переписку`, {method:'POST'});
             selectChat(who);
             updateSidebar();
         }
@@ -112,7 +144,7 @@
         const box = document.getElementById('msgs');
         box.innerHTML = data.map(m => `
             <div class="msg ${m.sender === myUser ? 'me' : 'other'}">
-                <small style="opacity:0.5">${m.sender}</small><br>
+                <div style="font-size: 11px; opacity: 0.6; margin-bottom: 3px;">${m.sender}</div>
                 ${m.type === 'voice' ? `<audio controls src="/get_voice?path=${m.text}"></audio>` : m.text}
             </div>
         `).join('');
@@ -146,7 +178,7 @@
                 chunks = []; loadMsgs();
             };
             mediaRecorder.start();
-        } catch(e) { alert("Микрофон недоступен!"); }
+        } catch(e) { alert("Микрофон недоступен! Проверьте HTTPS."); }
     }
     function stopVoice() { if(mediaRecorder) mediaRecorder.stop(); }
 </script>
